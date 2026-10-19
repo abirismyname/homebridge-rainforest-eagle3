@@ -1,7 +1,7 @@
 import { PlatformConfig } from 'homebridge';
 
 export const PLATFORM_NAME = 'EAGLE';
-export const PLUGIN_NAME = 'homebridge-rainforest-eagle3';
+export const PLUGIN_NAME = 'homebridge-rainforest-eagle3-abirismyname';
 
 export interface EAGLEConfig extends PlatformConfig {
   host?: string;
