@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as tls from 'tls';
 import { Logger } from 'homebridge';
 import { XMLParser } from 'fast-xml-parser';
 
@@ -19,14 +20,16 @@ export class HttpError extends Error {
 export class EagleClient {
   private readonly auth: string;
   private readonly parser: XMLParser;
+  private endpoint: URL;
 
   constructor(
-    private readonly host: string,
+    host: string,
     cloudId: string,
     installCode: string,
     private readonly log: Logger,
   ) {
     this.auth = Buffer.from(`${cloudId}:${installCode}`).toString('base64');
+    this.endpoint = new URL(`http://${host}/cgi-bin/post_manager`);
     this.parser = new XMLParser({
       ignoreAttributes: false,
       parseTagValue: false,
@@ -142,19 +145,59 @@ export class EagleClient {
     return { demand_kw, summation_delivered_kwh, summation_received_kwh };
   }
 
-  // Raw HTTP/1.0 over net.Socket — axios/fetch cannot downgrade from HTTP/1.1.
-  private sendCommand(xmlBody: string): Promise<string> {
+  private async sendCommand(xmlBody: string): Promise<string> {
+    let endpoint = this.endpoint;
+    for (let redirects = 0; ; redirects++) {
+      const response = await this.sendRequest(xmlBody, endpoint);
+      if (response.location === undefined) {
+        this.endpoint = endpoint;
+        return response.body;
+      }
+      if (redirects >= 5) {
+        throw new Error('Too many HTTP redirects (maximum 5)');
+      }
+
+      const next = new URL(response.location, endpoint);
+      if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+        throw new Error('Unsupported HTTP redirect protocol');
+      }
+      if (next.hostname !== endpoint.hostname || next.username || next.password) {
+        throw new Error('Refusing HTTP redirect to another host or a URL containing credentials');
+      }
+      if (endpoint.protocol === 'https:' && next.protocol !== 'https:') {
+        throw new Error('Refusing HTTPS redirect to insecure HTTP');
+      }
+      endpoint = next;
+    }
+  }
+
+  // Raw HTTP/1.0 over TCP/TLS — axios/fetch cannot downgrade from HTTP/1.1.
+  private sendRequest(
+    xmlBody: string,
+    endpoint: URL,
+  ): Promise<{ body: string; location?: string }> {
     return new Promise((resolve, reject) => {
       const bodyBytes = Buffer.from(xmlBody, 'utf8');
       const request =
-        `POST /cgi-bin/post_manager HTTP/1.0\r\n` +
-        `Host: ${this.host}\r\n` +
+        `POST ${endpoint.pathname}${endpoint.search} HTTP/1.0\r\n` +
+        `Host: ${endpoint.host}\r\n` +
         `Content-type: text/xml\r\n` +
         `Content-Length: ${bodyBytes.length}\r\n` +
         `Authorization: Basic ${this.auth}\r\n` +
         `\r\n`;
 
-      const socket = new net.Socket();
+      const secure = endpoint.protocol === 'https:';
+      const hostname = endpoint.hostname.replace(/^\[|\]$/g, '');
+      const options = {
+        host: hostname,
+        port: Number(endpoint.port || (secure ? 443 : 80)),
+      };
+      const socket = secure
+        ? tls.connect({
+          ...options,
+          servername: net.isIP(hostname) ? undefined : hostname,
+        })
+        : net.connect(options);
       const chunks: Buffer[] = [];
       let settled = false;
 
@@ -203,6 +246,16 @@ export class EagleClient {
         }
 
         const statusCode = parseInt(statusMatch[1], 10);
+        if ([301, 302, 307, 308].includes(statusCode)) {
+          const location = headerSection.split('\r\n').slice(1)
+            .find((line) => /^location:/i.test(line))?.slice('location:'.length).trim();
+          if (!location) {
+            reject(new HttpError(statusCode, `HTTP ${statusCode}: missing Location header`));
+            return;
+          }
+          resolve({ body, location });
+          return;
+        }
         if (statusCode !== 200) {
           reject(new HttpError(statusCode, `HTTP ${statusCode}: ${statusLine}`));
           return;
@@ -213,10 +266,10 @@ export class EagleClient {
           return;
         }
 
-        resolve(body);
+        resolve({ body });
       });
 
-      socket.connect(80, this.host, () => {
+      socket.once(secure ? 'secureConnect' : 'connect', () => {
         socket.write(request);
         socket.write(bodyBytes);
       });

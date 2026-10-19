@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EagleClient = exports.HttpError = void 0;
 const net = __importStar(require("net"));
+const tls = __importStar(require("tls"));
 const fast_xml_parser_1 = require("fast-xml-parser");
 // Thrown for HTTP-level errors so the caller can distinguish 401 vs 503 vs other.
 class HttpError extends Error {
@@ -47,9 +48,9 @@ class HttpError extends Error {
 exports.HttpError = HttpError;
 class EagleClient {
     constructor(host, cloudId, installCode, log) {
-        this.host = host;
         this.log = log;
         this.auth = Buffer.from(`${cloudId}:${installCode}`).toString('base64');
+        this.endpoint = new URL(`http://${host}/cgi-bin/post_manager`);
         this.parser = new fast_xml_parser_1.XMLParser({
             ignoreAttributes: false,
             parseTagValue: false,
@@ -138,17 +139,52 @@ class EagleClient {
             : undefined;
         return { demand_kw, summation_delivered_kwh, summation_received_kwh };
     }
-    // Raw HTTP/1.0 over net.Socket — axios/fetch cannot downgrade from HTTP/1.1.
-    sendCommand(xmlBody) {
+    async sendCommand(xmlBody) {
+        let endpoint = this.endpoint;
+        for (let redirects = 0;; redirects++) {
+            const response = await this.sendRequest(xmlBody, endpoint);
+            if (response.location === undefined) {
+                this.endpoint = endpoint;
+                return response.body;
+            }
+            if (redirects >= 5) {
+                throw new Error('Too many HTTP redirects (maximum 5)');
+            }
+            const next = new URL(response.location, endpoint);
+            if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+                throw new Error('Unsupported HTTP redirect protocol');
+            }
+            if (next.hostname !== endpoint.hostname || next.username || next.password) {
+                throw new Error('Refusing HTTP redirect to another host or a URL containing credentials');
+            }
+            if (endpoint.protocol === 'https:' && next.protocol !== 'https:') {
+                throw new Error('Refusing HTTPS redirect to insecure HTTP');
+            }
+            endpoint = next;
+        }
+    }
+    // Raw HTTP/1.0 over TCP/TLS — axios/fetch cannot downgrade from HTTP/1.1.
+    sendRequest(xmlBody, endpoint) {
         return new Promise((resolve, reject) => {
             const bodyBytes = Buffer.from(xmlBody, 'utf8');
-            const request = `POST /cgi-bin/post_manager HTTP/1.0\r\n` +
-                `Host: ${this.host}\r\n` +
+            const request = `POST ${endpoint.pathname}${endpoint.search} HTTP/1.0\r\n` +
+                `Host: ${endpoint.host}\r\n` +
                 `Content-type: text/xml\r\n` +
                 `Content-Length: ${bodyBytes.length}\r\n` +
                 `Authorization: Basic ${this.auth}\r\n` +
                 `\r\n`;
-            const socket = new net.Socket();
+            const secure = endpoint.protocol === 'https:';
+            const hostname = endpoint.hostname.replace(/^\[|\]$/g, '');
+            const options = {
+                host: hostname,
+                port: Number(endpoint.port || (secure ? 443 : 80)),
+            };
+            const socket = secure
+                ? tls.connect({
+                    ...options,
+                    servername: net.isIP(hostname) ? undefined : hostname,
+                })
+                : net.connect(options);
             const chunks = [];
             let settled = false;
             const done = (err) => {
@@ -187,6 +223,16 @@ class EagleClient {
                     return;
                 }
                 const statusCode = parseInt(statusMatch[1], 10);
+                if ([301, 302, 307, 308].includes(statusCode)) {
+                    const location = headerSection.split('\r\n').slice(1)
+                        .find((line) => /^location:/i.test(line))?.slice('location:'.length).trim();
+                    if (!location) {
+                        reject(new HttpError(statusCode, `HTTP ${statusCode}: missing Location header`));
+                        return;
+                    }
+                    resolve({ body, location });
+                    return;
+                }
                 if (statusCode !== 200) {
                     reject(new HttpError(statusCode, `HTTP ${statusCode}: ${statusLine}`));
                     return;
@@ -195,9 +241,9 @@ class EagleClient {
                     reject(new Error('Empty response body'));
                     return;
                 }
-                resolve(body);
+                resolve({ body });
             });
-            socket.connect(80, this.host, () => {
+            socket.once(secure ? 'secureConnect' : 'connect', () => {
                 socket.write(request);
                 socket.write(bodyBytes);
             });
