@@ -1,7 +1,7 @@
-# homebridge-rainforest-eagle3
-[![License: MIT](https://img.shields.io/github/license/dacarson/homebridge-rainforest-eagle3)](LICENSE)
-[![Version](https://img.shields.io/github/v/release/dacarson/homebridge-rainforest-eagle3)](https://github.com/dacarson/homebridge-rainforest-eagle3/releases)
-[![npm downloads](https://img.shields.io/npm/dt/homebridge-rainforest-eagle3)](https://www.npmjs.com/package/homebridge-rainforest-eagle3)
+# homebridge-rainforest-eagle3-abirismyname
+[![License: MIT](https://img.shields.io/github/license/abirismyname/homebridge-rainforest-eagle3)](LICENSE)
+[![Version](https://img.shields.io/github/v/release/abirismyname/homebridge-rainforest-eagle3)](https://github.com/abirismyname/homebridge-rainforest-eagle3/releases)
+[![npm downloads](https://img.shields.io/npm/dt/homebridge-rainforest-eagle3-abirismyname)](https://www.npmjs.com/package/homebridge-rainforest-eagle3-abirismyname)
 
 A [Homebridge](https://homebridge.io) plugin for the [Rainforest Automation EAGLE-3](https://www.rainforestautomation.com) smart meter gateway. Exposes your utility grid meter as an **Eve Energy** accessory in Apple HomeKit, with real-time power demand, cumulative import energy, and native Eve app consumption history.
 
@@ -60,7 +60,7 @@ The accessory renders as a **smart plug** in Apple Home:
 Install via the Homebridge UI plugin search, or from the command line:
 
 ```bash
-npm install -g homebridge-rainforest-eagle3
+npm install -g homebridge-rainforest-eagle3-abirismyname
 ```
 
 ---
@@ -212,7 +212,7 @@ The plugin is designed to be resilient to transient EAGLE-3 failures:
 ## Building from Source
 
 ```bash
-git clone https://github.com/dacarson/homebridge-rainforest-eagle3.git
+git clone https://github.com/abirismyname/homebridge-rainforest-eagle3.git
 cd homebridge-rainforest-eagle3
 npm install
 npm run build
@@ -223,12 +223,6 @@ To develop with live rebuilds:
 ```bash
 npm run watch
 ```
-
----
-
-## Related Plugins
-
-- [homebridge-pvs6](https://github.com/dacarson/homebridge-pvs6) — SunPower PVS6 solar production, designed to sit alongside this plugin in Apple Home
 
 ---
 

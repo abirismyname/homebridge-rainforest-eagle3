@@ -1,8 +1,8 @@
-# homebridge-rainforest-eagle3 — Project Specification
+# homebridge-rainforest-eagle3-abirismyname — Project Specification
 
 A Homebridge plugin that exposes Rainforest Automation EAGLE-200 smart meter data to Apple HomeKit via an Eve Energy accessory with fakegato history support.
 
-> **npm package / platform name:** `homebridge-rainforest-eagle3` (matches the repository). The Homebridge platform identifier remains `EAGLE`.
+> **npm package name:** `homebridge-rainforest-eagle3-abirismyname` (unique to this fork). The Homebridge platform identifier remains `EAGLE`.
 
 ---
 
@@ -588,7 +588,7 @@ The Homebridge plugin registry UI uses the `"displayName"` field in `package.jso
 
 ```json
 {
-  "name": "homebridge-rainforest-eagle3",
+  "name": "homebridge-rainforest-eagle3-abirismyname",
   "displayName": "Eagle 3",
   ...
 }
